@@ -1,6 +1,6 @@
 //
 //  SceneDelegate.swift
-//  SwiftUI
+//  SwiftUIApp
 //
 //  Created by Essa Alblooshi on 26/05/2020.
 //  Copyright © 2020 Essa Alblooshi. All rights reserved.
