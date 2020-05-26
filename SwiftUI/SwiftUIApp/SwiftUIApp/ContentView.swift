@@ -27,6 +27,7 @@ struct ContentView: View {
     
     func button(){
         text = "button pressed"
+        
     }
 }
 
