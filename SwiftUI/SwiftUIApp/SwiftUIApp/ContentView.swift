@@ -9,24 +9,24 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State var essa = "Essa"
+    @State var text = "Essa"
     
     var body: some View {
         VStack{
-        Text(essa)
-            .border(/*@START_MENU_TOKEN@*/Color.red/*@END_MENU_TOKEN@*/, width: /*@START_MENU_TOKEN@*/0/*@END_MENU_TOKEN@*/)
+        Text(text)
+            .padding(150)
             
         
         Button(action: button) {
             Text("Button")
-        }
+            }.padding()
 
-    }
+        }
     }
     
     
     func button(){
-        essa = "button pressed"
+        text = "button pressed"
     }
 }
 
