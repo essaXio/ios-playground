@@ -14,36 +14,45 @@ struct LoginView: View {
     @State var password: String = ""
     var body: some View {
         
-        VStack {
         
         
-        Text("CodeLab Authenticator")
-            .font(.largeTitle).padding()
+        
+        
+        
+        //Spacer()
+        NavigationView{
+        GeometryReader{ reader in
             
-            
-            Spacer()
-            VStack{
-                Text("Login").font(.title)
-            HStack{
+            ScrollView{
+                Text("CodeLab Authenticator")
+                    .font(.largeTitle).padding()
                 
-                Text("Username")
-                TextField("", text: $username).textFieldStyle(RoundedBorderTextFieldStyle())
-                
-                }
-                HStack{
-                    Text("Password")
-                    TextField("", text: $password).textFieldStyle(RoundedBorderTextFieldStyle())
-                    
-                }
-            }.padding()
-            
-            
-            Spacer()
-            
+                VStack{
+                    Text("Login").font(.title)
+                    HStack{
+                        
+                        
+                        TextField("Username", text: self.$username).textFieldStyle(RoundedBorderTextFieldStyle()).multilineTextAlignment(.center)
+                        
+                    }
+                    HStack{
+                        
+                        TextField("Password", text: self.$password).textFieldStyle(RoundedBorderTextFieldStyle()).multilineTextAlignment(.center)
+                        
+                    }
+                }.padding().frame(width: reader.size.width*0.7)
             }
+            
+            
+            
+            
+        }
+        }
         
     }
+    
 }
+
 
 
 
@@ -84,9 +93,9 @@ struct LoginView_Previews: PreviewProvider {
         //LoginView()
         Group{
             LoginView()
-        LoginView().previewLayout(.fixed(width: 560, height: 320))
+            LoginView().previewLayout(.fixed(width: 560, height: 320))
             
-            LoginView().environment(\.colorScheme, .dark)
+            //LoginView().environment(\.colorScheme, .dark)
         }
     }
     
