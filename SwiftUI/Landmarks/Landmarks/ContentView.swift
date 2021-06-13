@@ -27,6 +27,9 @@ struct ContentView: View {
                     Text("California").font(.subheadline)
                     
                 }
+                Divider()
+                Text("Rock")
+                
             }.padding()
             
             Spacer()
@@ -38,6 +41,9 @@ struct ContentView: View {
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView()
+        Group {
+            ContentView()
+           
+        }
     }
 }
