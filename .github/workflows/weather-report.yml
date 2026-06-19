@@ -1,0 +1,116 @@
+name: Daily Abu Dhabi Weather Report
+
+on:
+  schedule:
+    - cron: '0 17 * * *'  # 9:00 PM Abu Dhabi time (UTC+4)
+  workflow_dispatch:        # Allow manual trigger for testing
+
+jobs:
+  send-weather-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch Weather & Send Email
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
+        run: |
+          python3 << 'EOF'
+          import urllib.request
+          import json
+          import os
+          from datetime import datetime
+
+          # Open-Meteo API — Abu Dhabi (24.4539°N, 54.3773°E), no API key required
+          url = (
+              "https://api.open-meteo.com/v1/forecast"
+              "?latitude=24.4539&longitude=54.3773"
+              "&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
+              "weather_code,wind_speed_10m,wind_direction_10m,uv_index"
+              "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,"
+              "sunrise,sunset,uv_index_max,weather_code"
+              "&timezone=Asia/Dubai&forecast_days=1"
+          )
+
+          with urllib.request.urlopen(url) as response:
+              data = json.loads(response.read())
+
+          current = data['current']
+          daily = data['daily']
+
+          wmo_codes = {
+              0: "Clear sky ☀️", 1: "Mainly clear 🌤️", 2: "Partly cloudy ⛅", 3: "Overcast ☁️",
+              45: "Foggy 🌫️", 48: "Icy fog 🌫️",
+              51: "Light drizzle 🌦️", 53: "Moderate drizzle 🌦️", 55: "Dense drizzle 🌧️",
+              61: "Slight rain 🌧️", 63: "Moderate rain 🌧️", 65: "Heavy rain 🌧️",
+              71: "Slight snow 🌨️", 73: "Moderate snow 🌨️", 75: "Heavy snow ❄️",
+              80: "Slight showers 🌦️", 81: "Moderate showers 🌧️", 82: "Violent showers ⛈️",
+              95: "Thunderstorm ⛈️", 96: "Thunderstorm with hail ⛈️", 99: "Thunderstorm with heavy hail ⛈️",
+          }
+
+          condition = wmo_codes.get(current['weather_code'], f"Code {current['weather_code']}")
+          today = daily['time'][0]
+          sunrise = daily['sunrise'][0].split('T')[1]
+          sunset = daily['sunset'][0].split('T')[1]
+
+          html = f"""
+          <html>
+          <body style="font-family: Arial, sans-serif; max-width: 620px; margin: auto; padding: 24px; background: #f0f4f8;">
+            <div style="background: #fff; border-radius: 12px; padding: 28px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+              <h2 style="margin: 0 0 4px; color: #1a3c5e;">🌍 Abu Dhabi Weather Report</h2>
+              <p style="margin: 0 0 20px; color: #888; font-size: 13px;">{today} · Updated at 9:00 PM GST</p>
+
+              <div style="background: #e8f4fd; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 12px; color: #1a3c5e;">Current Conditions</h3>
+                <table style="width:100%; border-collapse:collapse; font-size:15px;">
+                  <tr><td style="padding:6px 0; color:#555;">Condition</td><td style="padding:6px 0;"><b>{condition}</b></td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">Temperature</td><td style="padding:6px 0;"><b>{current['temperature_2m']}°C</b> &nbsp; feels like {current['apparent_temperature']}°C</td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">Humidity</td><td style="padding:6px 0;"><b>{current['relative_humidity_2m']}%</b></td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">Wind Speed</td><td style="padding:6px 0;"><b>{current['wind_speed_10m']} km/h</b></td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">UV Index</td><td style="padding:6px 0;"><b>{current.get('uv_index', 'N/A')}</b></td></tr>
+                </table>
+              </div>
+
+              <div style="background: #f4f6f9; border-radius: 8px; padding: 16px;">
+                <h3 style="margin: 0 0 12px; color: #1a3c5e;">Today's Forecast</h3>
+                <table style="width:100%; border-collapse:collapse; font-size:15px;">
+                  <tr><td style="padding:6px 0; color:#555;">High / Low</td><td style="padding:6px 0;"><b>{daily['temperature_2m_max'][0]}°C / {daily['temperature_2m_min'][0]}°C</b></td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">Precipitation</td><td style="padding:6px 0;"><b>{daily['precipitation_sum'][0]} mm</b></td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">UV Index Max</td><td style="padding:6px 0;"><b>{daily['uv_index_max'][0]}</b></td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">Sunrise</td><td style="padding:6px 0;"><b>{sunrise}</b></td></tr>
+                  <tr><td style="padding:6px 0; color:#555;">Sunset</td><td style="padding:6px 0;"><b>{sunset}</b></td></tr>
+                </table>
+              </div>
+
+              <p style="margin: 20px 0 0; color: #aaa; font-size: 11px; text-align: center;">
+                Data by <a href="https://open-meteo.com" style="color:#aaa;">Open-Meteo</a> · Delivered via GitHub Actions
+              </p>
+            </div>
+          </body>
+          </html>
+          """
+
+          payload = json.dumps({
+              "personalizations": [{"to": [{"email": "vhttb4mwdw@privaterelay.appleid.com"}]}],
+              "from": {"email": os.environ['SENDGRID_FROM_EMAIL'], "name": "Abu Dhabi Weather Bot"},
+              "subject": f"Abu Dhabi Weather — {today}",
+              "content": [{"type": "text/html", "value": html}]
+          }).encode('utf-8')
+
+          req = urllib.request.Request(
+              "https://api.sendgrid.com/v3/mail/send",
+              data=payload,
+              headers={
+                  "Authorization": f"Bearer {os.environ['SENDGRID_API_KEY']}",
+                  "Content-Type": "application/json"
+              }
+          )
+
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  print(f"✅ Email sent successfully. Status: {resp.status}")
+          except urllib.error.HTTPError as e:
+              error_body = e.read().decode()
+              print(f"❌ SendGrid error {e.status}: {error_body}")
+              exit(1)
+          EOF
