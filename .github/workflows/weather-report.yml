@@ -10,36 +10,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Fetch Weather & Send Email
+      - name: Fetch Weather & Send via Microsoft Graph
         env:
-          M365_EMAIL: ${{ secrets.M365_EMAIL }}
-          M365_PASSWORD: ${{ secrets.M365_PASSWORD }}
-          TO_EMAIL: ${{ secrets.M365_EMAIL }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
         run: |
           python3 << 'EOF'
           import urllib.request
+          import urllib.parse
           import json
           import os
-          import smtplib
-          from email.mime.multipart import MIMEMultipart
-          from email.mime.text import MIMEText
 
-          # Open-Meteo API — Abu Dhabi (24.4539°N, 54.3773°E), no API key required
-          url = (
+          # ── 1. Fetch Abu Dhabi weather (Open-Meteo, no key needed) ──────────
+          weather_url = (
               "https://api.open-meteo.com/v1/forecast"
               "?latitude=24.4539&longitude=54.3773"
               "&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
-              "weather_code,wind_speed_10m,wind_direction_10m,uv_index"
+              "weather_code,wind_speed_10m,uv_index"
               "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,"
               "sunrise,sunset,uv_index_max,weather_code"
               "&timezone=Asia/Dubai&forecast_days=1"
           )
-
-          with urllib.request.urlopen(url) as response:
-              data = json.loads(response.read())
+          with urllib.request.urlopen(weather_url) as r:
+              data = json.loads(r.read())
 
           current = data['current']
-          daily = data['daily']
+          daily   = data['daily']
 
           wmo_codes = {
               0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
@@ -52,65 +50,91 @@ jobs:
           }
 
           condition = wmo_codes.get(current['weather_code'], f"Code {current['weather_code']}")
-          today = daily['time'][0]
+          today   = daily['time'][0]
           sunrise = daily['sunrise'][0].split('T')[1]
-          sunset = daily['sunset'][0].split('T')[1]
+          sunset  = daily['sunset'][0].split('T')[1]
 
+          # ── 2. Get OAuth token (client credentials) ──────────────────────────
+          tenant_id     = os.environ['AZURE_TENANT_ID']
+          client_id     = os.environ['AZURE_CLIENT_ID']
+          client_secret = os.environ['AZURE_CLIENT_SECRET']
+          sender        = os.environ['SENDER_EMAIL']
+
+          token_data = urllib.parse.urlencode({
+              'grant_type':    'client_credentials',
+              'client_id':     client_id,
+              'client_secret': client_secret,
+              'scope':         'https://graph.microsoft.com/.default',
+          }).encode()
+
+          token_req = urllib.request.Request(
+              f'https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token',
+              data=token_data,
+          )
+          with urllib.request.urlopen(token_req) as r:
+              access_token = json.loads(r.read())['access_token']
+
+          # ── 3. Build HTML email body ─────────────────────────────────────────
           html = f"""
           <html>
-          <body style="font-family: Arial, sans-serif; max-width: 620px; margin: auto; padding: 24px; background: #f0f4f8;">
-            <div style="background: #fff; border-radius: 12px; padding: 28px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-              <h2 style="margin: 0 0 4px; color: #1a3c5e;">Abu Dhabi Weather Report</h2>
-              <p style="margin: 0 0 20px; color: #888; font-size: 13px;">{today} · Updated at 9:00 PM GST</p>
+          <body style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:24px;background:#f0f4f8;">
+            <div style="background:#fff;border-radius:12px;padding:28px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+              <h2 style="margin:0 0 4px;color:#1a3c5e;">Abu Dhabi Weather Report</h2>
+              <p style="margin:0 0 20px;color:#888;font-size:13px;">{today} &middot; 9:00 PM GST</p>
 
-              <div style="background: #e8f4fd; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                <h3 style="margin: 0 0 12px; color: #1a3c5e;">Current Conditions</h3>
-                <table style="width:100%; border-collapse:collapse; font-size:15px;">
-                  <tr><td style="padding:6px 0; color:#555;">Condition</td><td style="padding:6px 0;"><b>{condition}</b></td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">Temperature</td><td style="padding:6px 0;"><b>{current['temperature_2m']}°C</b> &nbsp; feels like {current['apparent_temperature']}°C</td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">Humidity</td><td style="padding:6px 0;"><b>{current['relative_humidity_2m']}%</b></td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">Wind Speed</td><td style="padding:6px 0;"><b>{current['wind_speed_10m']} km/h</b></td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">UV Index</td><td style="padding:6px 0;"><b>{current.get('uv_index', 'N/A')}</b></td></tr>
+              <div style="background:#e8f4fd;border-radius:8px;padding:16px;margin-bottom:20px;">
+                <h3 style="margin:0 0 12px;color:#1a3c5e;">Current Conditions</h3>
+                <table style="width:100%;border-collapse:collapse;font-size:15px;">
+                  <tr><td style="padding:6px 0;color:#555;">Condition</td>    <td><b>{condition}</b></td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">Temperature</td>  <td><b>{current['temperature_2m']}°C</b> &nbsp; feels like {current['apparent_temperature']}°C</td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">Humidity</td>     <td><b>{current['relative_humidity_2m']}%</b></td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">Wind Speed</td>   <td><b>{current['wind_speed_10m']} km/h</b></td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">UV Index</td>     <td><b>{current.get('uv_index', 'N/A')}</b></td></tr>
                 </table>
               </div>
 
-              <div style="background: #f4f6f9; border-radius: 8px; padding: 16px;">
-                <h3 style="margin: 0 0 12px; color: #1a3c5e;">Today's Forecast</h3>
-                <table style="width:100%; border-collapse:collapse; font-size:15px;">
-                  <tr><td style="padding:6px 0; color:#555;">High / Low</td><td style="padding:6px 0;"><b>{daily['temperature_2m_max'][0]}°C / {daily['temperature_2m_min'][0]}°C</b></td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">Precipitation</td><td style="padding:6px 0;"><b>{daily['precipitation_sum'][0]} mm</b></td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">UV Index Max</td><td style="padding:6px 0;"><b>{daily['uv_index_max'][0]}</b></td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">Sunrise</td><td style="padding:6px 0;"><b>{sunrise}</b></td></tr>
-                  <tr><td style="padding:6px 0; color:#555;">Sunset</td><td style="padding:6px 0;"><b>{sunset}</b></td></tr>
+              <div style="background:#f4f6f9;border-radius:8px;padding:16px;">
+                <h3 style="margin:0 0 12px;color:#1a3c5e;">Today's Forecast</h3>
+                <table style="width:100%;border-collapse:collapse;font-size:15px;">
+                  <tr><td style="padding:6px 0;color:#555;">High / Low</td>      <td><b>{daily['temperature_2m_max'][0]}°C / {daily['temperature_2m_min'][0]}°C</b></td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">Precipitation</td>   <td><b>{daily['precipitation_sum'][0]} mm</b></td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">UV Index Max</td>    <td><b>{daily['uv_index_max'][0]}</b></td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">Sunrise</td>         <td><b>{sunrise}</b></td></tr>
+                  <tr><td style="padding:6px 0;color:#555;">Sunset</td>          <td><b>{sunset}</b></td></tr>
                 </table>
               </div>
 
-              <p style="margin: 20px 0 0; color: #aaa; font-size: 11px; text-align: center;">
-                Data by Open-Meteo · Delivered via GitHub Actions
+              <p style="margin:20px 0 0;color:#aaa;font-size:11px;text-align:center;">
+                Data by Open-Meteo &middot; Delivered via Microsoft Graph
               </p>
             </div>
           </body>
           </html>
           """
 
-          sender = os.environ['M365_EMAIL']
-          password = os.environ['M365_PASSWORD']
-          recipient = os.environ['TO_EMAIL']
+          # ── 4. Send via Graph API ────────────────────────────────────────────
+          mail_payload = json.dumps({
+              "message": {
+                  "subject": f"Abu Dhabi Weather — {today}",
+                  "body": {"contentType": "HTML", "content": html},
+                  "toRecipients": [{"emailAddress": {"address": sender}}],
+              },
+              "saveToSentItems": False,
+          }).encode()
 
-          msg = MIMEMultipart('alternative')
-          msg['Subject'] = f"Abu Dhabi Weather — {today}"
-          msg['From'] = sender
-          msg['To'] = recipient
-          msg.attach(MIMEText(html, 'html'))
+          mail_req = urllib.request.Request(
+              f'https://graph.microsoft.com/v1.0/users/{sender}/sendMail',
+              data=mail_payload,
+              headers={
+                  'Authorization': f'Bearer {access_token}',
+                  'Content-Type':  'application/json',
+              },
+          )
 
           try:
-              with smtplib.SMTP('smtp.office365.com', 587) as server:
-                  server.ehlo()
-                  server.starttls()
-                  server.login(sender, password)
-                  server.sendmail(sender, recipient, msg.as_string())
-              print("Email sent successfully.")
-          except Exception as e:
-              print(f"Failed to send email: {e}")
+              with urllib.request.urlopen(mail_req) as r:
+                  print(f"Email sent. Status: {r.status}")
+          except urllib.error.HTTPError as e:
+              print(f"Graph API error {e.status}: {e.read().decode()}")
               exit(1)
           EOF
